@@ -1,0 +1,40 @@
+
+with raw_cte as (
+  select resource_id, date, weekday, datetime(
+    substr(end_time, 7, 4) || '-' ||  -- year
+    substr(end_time, 4, 2) || '-' ||  -- month
+    substr(end_time, 1, 2) || ' ' ||  -- day
+    substr(end_time, 12, 5)           -- time (HH:MM)
+  ) AS end_time, datetime(
+    substr(start_time, 7, 4) || '-' ||  -- year
+    substr(start_time, 4, 2) || '-' ||  -- month
+    substr(start_time, 1, 2) || ' ' ||  -- day
+    substr(start_time, 12, 5)           -- time (HH:MM)
+  ) AS start_time, is_clock_in, is_clock_out
+from test_de1
+),
+diff_data as 
+(select *, CEIL((julianday(end_time) - julianday(start_time)) * 24 * 60) AS diff_minutes 
+from raw_cte
+),
+day_agg_data AS
+(select resource_id, substr(date, 7, 4) || '-' ||  -- YYYY
+  substr(date, 4, 2) || '-' ||  -- MM
+  substr(date, 1, 2)            -- DD
+AS iso_date, sum(diff_minutes) as day_agg_hrs
+from diff_data
+group by resource_id, iso_date
+),
+penultimate_data AS
+(select *, CAST(strftime('%W', iso_date) AS INTEGER) + 1 AS week_number
+from day_agg_data
+),
+final_data as 
+(select resource_id, week_number, sum(day_agg_hrs) as week_sum_hrs
+from penultimate_data
+group BY resource_id, week_number
+)
+select resource_id, round(avg(week_sum_hrs)/60, 2) as weekly_avg_hrs
+from final_data
+group by resource_id
+
